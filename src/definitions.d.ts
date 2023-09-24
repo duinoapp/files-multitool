@@ -13,3 +13,7 @@ export interface FileStat {
 export interface PathMap {
   [path: string]: FileStat;
 }
+
+export interface PathDump {
+  [path: string]: string;
+}
