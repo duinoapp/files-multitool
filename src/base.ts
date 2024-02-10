@@ -15,13 +15,13 @@ export interface BaseAdaptorOptions {
 }
 
 export abstract class BaseAdaptor {
-  protected ref: string;
-  protected options: BaseAdaptorOptions;
-  private _isInitialized: boolean = false;
+  ref: string;
+  options: BaseAdaptorOptions;
+  _isInitialized: boolean = false;
   get isInitialized(): boolean {
     return this._isInitialized;
   }
-  protected set isInitialized(value: boolean) {
+  set isInitialized(value: boolean) {
     this._isInitialized = value;
   }
 
@@ -54,7 +54,7 @@ export abstract class BaseAdaptor {
    * @throws {Error} If the fetch implementation throws an error.
    * @private
   */
-  async #fetch(path: string, options: any): Promise<Response> {
+  async _fetch(path: string, options: any): Promise<Response> {
     if (this.options.fetch) {
       return this.options.fetch(path, options);
     } else if (typeof fetch !== 'undefined') {

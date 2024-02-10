@@ -1,4 +1,6 @@
 
+import '@types/wicg-file-system-access'
+
 export interface FileStat {
   path: string;
   parentPath: string;

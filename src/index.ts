@@ -6,6 +6,8 @@ import { FSAAdaptor, FSAAdaptorOptions } from './adaptors/fsa-api';
 import { IndexDBAdaptor, IndexDBAdaptorOptions } from './adaptors/indexdb';
 import { MemoryAdaptor, MemoryAdaptorOptions } from './adaptors/memory';
 
+export { FileStat, PathMap, PathDump };
+
 export enum FilesMultitoolType {
   FSA_API = 'fsa-api',
   INDEXDB = 'indexdb',
@@ -57,6 +59,10 @@ interface FilesMultitoolEvents {
   'paths-changed': (paths: string[], changes: FilesMultitoolChangeEvent[]) => void;
 }
 
+export interface FilesMultitoolOptions extends BaseAdaptorOptions, FSAAdaptorOptions, IndexDBAdaptorOptions, MemoryAdaptorOptions {
+}
+
+
 const cleanPath = (path: string) => {
   if (!path) return '';
   if (path.includes('..')) throw new Error('Invalid path.');
@@ -65,11 +71,11 @@ const cleanPath = (path: string) => {
     .replace(/(^\/)|(\/$)/g, '');
 };
 
-export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
-  protected type: FilesMultitoolType;
-  protected ref: string;
-  protected options: BaseAdaptorOptions;
-  protected adaptor: BaseAdaptor;
+export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
+  type: FilesMultitoolType;
+  ref: string;
+  options: BaseAdaptorOptions;
+  adaptor: BaseAdaptor;
 
   /**
    * Creates a new instance of FilesMultitool with the specified type, reference, and options.
@@ -78,7 +84,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
    * @param options The options for the adaptor.
    * @throws An error if the reference is not provided or if the adaptor type is not supported.
    */
-  constructor(type: FilesMultitoolType, ref: string, options: FSAAdaptorOptions | IndexDBAdaptorOptions = {}) {
+  constructor(type: FilesMultitoolType, ref: string, options: FilesMultitoolOptions = {}) {
     if (!ref) throw new Error('Reference is required.');
     super();
     this.type = type;
@@ -94,6 +100,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
         break;
       case FilesMultitoolType.MEMORY:
         this.adaptor = new MemoryAdaptor(ref, options as MemoryAdaptorOptions);
+        break;
       default:
         throw new Error('Unsupported adaptor type.');
     }
@@ -225,7 +232,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
   async list(path: string, recursive?: boolean): Promise<PathMap> {
     path = cleanPath(path);
     const map = {} as PathMap;
-    const root = this.adaptor.list(path);
+    const root = await this.adaptor.list(path);
     for (const [key, value] of Object.entries(root)) {
       map[key] = value;
       if (value.isDirectory && recursive) {
@@ -264,14 +271,22 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
    * @emits {FilesMultitoolEvents#file-changed} When a file is added or modified.
    * @emits {FilesMultitoolEvents#paths-changed} When a file is added or modified.
    */
-  async writeFile(path: string, content: string | Buffer, encoding: BufferEncoding = 'utf-8'): Promise<void> {
+  async writeFile(path: string, content: Buffer | ArrayBuffer): Promise<void>
+  async writeFile(path: string, content: string, encoding?: BufferEncoding): Promise<void>
+  async writeFile(path: string, content: string | Buffer | ArrayBuffer, encoding: BufferEncoding = 'utf-8'): Promise<void> {
     path = cleanPath(path);
     let stat = await this.adaptor.stat(path);
     if (stat?.isDirectory) throw new Error('Cannot write to a directory.');
+    const parentPath = path.split('/').slice(0, -1).join('/').replace(/(^\/)|(\/$)/g, '');
+    if (parentPath) await this.adaptor.mkdir(parentPath);
+    console.log('writing file', path, parentPath, stat, await this.adaptor.stat(parentPath));
     if (typeof content === 'string') {
       content = Buffer.from(content, encoding);
     }
-    await this.adaptor.writeFile(path, content);
+    if (content instanceof ArrayBuffer) {
+      content = Buffer.from(content);
+    }
+    await this.adaptor.writeFile(path, content as Buffer);
     const change = {
       path,
       stat: stat || (await this.adaptor.stat(path)),
@@ -349,7 +364,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
    * @param oldStat - The old stats of the file or directory if it was renamed.
    * @param oldPathMap - A map of child paths to their old stats for the directory if it was renamed.
    */
-  #massEmit(
+  _massEmit(
     action: 'added' | 'deleted' | 'renamed',
     path: string,
     pathStat: FileStat,
@@ -420,7 +435,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     const children = await this.list(path, recursive);
     if (Object.keys(children).length && !recursive) throw new Error('Directory is not empty.');
     await this.adaptor.rmdir(path);
-    this.#massEmit('deleted', path, stat, children);
+    this._massEmit('deleted', path, stat, children);
   }
 
   /**
@@ -444,7 +459,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     await this.adaptor.copy(source, destination, recursive);
     let children: PathMap = {};
     if (sourceStat.isDirectory) children = await this.list(destination, recursive);
-    this.#massEmit('added', destination, sourceStat, children);
+    this._massEmit('added', destination, sourceStat, children);
   }
 
   /**
@@ -472,7 +487,7 @@ export class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     destinationStat = await this.adaptor.stat(destination);
     let destinationChildren: PathMap = {};
     if (sourceStat.isDirectory) destinationChildren = await this.list(destination, true);
-    this.#massEmit('renamed', destination, destinationStat!, destinationChildren, source, sourceStat, sourceChildren);
+    this._massEmit('renamed', destination, destinationStat!, destinationChildren, source, sourceStat, sourceChildren);
   }
 
   /**

@@ -31,7 +31,7 @@ export class MemoryAdaptor extends BaseAdaptor {
     this.isInitialized = false;
   }
 
-  #toStat(file: MemoryFile): FileStat {
+  _toStat(file: MemoryFile): FileStat {
     const stat = {...file};
     delete stat.content;
     return stat;
@@ -42,7 +42,7 @@ export class MemoryAdaptor extends BaseAdaptor {
     if (!file) {
       return null;
     }
-    return this.#toStat(file);
+    return this._toStat(file);
   }
 
   async readFile(path: string): Promise<Buffer> {
@@ -63,7 +63,7 @@ export class MemoryAdaptor extends BaseAdaptor {
       isFile: true,
       size: data.length,
       modifiedTime: new Date(),
-      createdTime: file.createdTime || new Date(),
+      createdTime: file?.createdTime || new Date(),
       content: data.toString('base64'),
     };
   }
@@ -79,11 +79,11 @@ export class MemoryAdaptor extends BaseAdaptor {
         const relativePath = filePath.slice(path.length + 1);
         const parts = relativePath.split('/');
         if (parts.length === 1) {
-          files[parts[0]] = this.#toStat(this.files[filePath]);
+          files[parts[0]] = this._toStat(this.files[filePath]);
         } else {
           const dirName = parts[0];
           if (!files[dirName]) {
-            files[dirName] = this.#toStat(this.files[`${path}/${dirName}`]);
+            files[dirName] = this._toStat(this.files[`${path}/${dirName}`]);
           }
         }
       }
@@ -92,16 +92,22 @@ export class MemoryAdaptor extends BaseAdaptor {
   }
 
   async mkdir(path: string): Promise<void> {
-    this.files[path] = {
-      path,
-      parentPath: path.split('/').slice(0, -1).join('/')
-        .replace(/(^\/)|(\/$)/g, ''),
-      isDirectory: true,
-      isFile: false,
-      size: 0,
-      modifiedTime: new Date(),
-      createdTime: new Date(),
-    };
+    const parts = path.replace(/(^\/)|(\/$)/g, '').split('/');
+    for (let i = 0; i < parts.length; i++) {
+      const partPath = parts.slice(0, i + 1).join('/');
+      if (!this.files[partPath]) {
+        this.files[partPath] = {
+          path: partPath,
+          parentPath: partPath.split('/').slice(0, -1).join('/')
+            .replace(/(^\/)|(\/$)/g, ''),
+          isDirectory: true,
+          isFile: false,
+          size: 0,
+          modifiedTime: new Date(),
+          createdTime: new Date(),
+        };
+      }
+    }
   }
 
   async rmdir(path: string): Promise<void> {

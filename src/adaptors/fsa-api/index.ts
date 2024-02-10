@@ -4,7 +4,6 @@
  * If it cannot find one, it will prompt the user to select a directory.
  * @see https://developer.mozilla.org/en-US/docs/Web/API/File_System_Access_API
 */
-import '@types/wicg-file-system-access'
 import { BaseAdaptor, BaseAdaptorOptions } from '../../base';
 import { FileStat, PathMap } from '../../definitions';
 
@@ -33,10 +32,10 @@ interface FileCacheItem {
 }
 
 export class FSAAdaptor extends BaseAdaptor {
-  declare protected options: FSAAdaptorOptions;
-  protected root: FileSystemDirectoryHandle | null = null;
-  protected pathCache: PathCache = {};
-  private fileCache: FileCacheItem[] = [];
+  declare options: FSAAdaptorOptions;
+  root: FileSystemDirectoryHandle | null = null;
+  pathCache: PathCache = {};
+  fileCache: FileCacheItem[] = [];
 
   get isInitialized(): boolean {
     return !!this.root;
@@ -48,7 +47,7 @@ export class FSAAdaptor extends BaseAdaptor {
       && typeof window.showDirectoryPicker !== 'undefined';
   }
 
-  async #getFile(handle: FileSystemFileHandle): Promise<File> {
+  async _getFile(handle: FileSystemFileHandle): Promise<File> {
     const cached = this.fileCache.find(item => item.handler === handle);
     if (cached) return cached.file;
     const file = await handle.getFile();
@@ -59,7 +58,7 @@ export class FSAAdaptor extends BaseAdaptor {
     return file;
   }
 
-  #purgeCache(handleOrPath?: FileSystemFileHandle | string): void {
+  _purgeCache(handleOrPath?: FileSystemFileHandle | string): void {
     if (typeof handleOrPath === 'string') {
       delete this.pathCache[handleOrPath];
     } else if (handleOrPath) {
@@ -71,7 +70,7 @@ export class FSAAdaptor extends BaseAdaptor {
     }
   }
 
-  #getHandleFromDB(store: IDBObjectStore): Promise<FileSystemDirectoryHandle | null> {
+  _getHandleFromDB(store: IDBObjectStore): Promise<FileSystemDirectoryHandle | null> {
     return new Promise((resolve, reject) => {
       const index = store.index('ref');
       const request = index.get(this.ref);
@@ -85,7 +84,7 @@ export class FSAAdaptor extends BaseAdaptor {
     });
   }
 
-  #saveHandleToDB(store: IDBObjectStore, handle: FileSystemDirectoryHandle): Promise<void> {
+  _saveHandleToDB(store: IDBObjectStore, handle: FileSystemDirectoryHandle): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = store.put({
         ref: this.ref,
@@ -100,7 +99,7 @@ export class FSAAdaptor extends BaseAdaptor {
     });
   }
 
-  #dropHandleFromDB(store: IDBObjectStore): Promise<void> {
+  _dropHandleFromDB(store: IDBObjectStore): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = store.delete(this.ref);
       request.onerror = (event) => {
@@ -112,7 +111,7 @@ export class FSAAdaptor extends BaseAdaptor {
     });
   }
 
-  async #verifyHandle(handle: FileSystemDirectoryHandle): Promise<void> {
+  async _verifyHandle(handle: FileSystemDirectoryHandle): Promise<void> {
     const opts = {
       mode: 'readwrite' as FileSystemPermissionMode,
     };
@@ -151,7 +150,7 @@ export class FSAAdaptor extends BaseAdaptor {
       .transaction(this.options.store || INDEXDB_DEFAULT_STORE, 'readwrite')
       .objectStore(this.options.store || INDEXDB_DEFAULT_STORE);
 
-    let handle = await this.#getHandleFromDB(store);
+    let handle = await this._getHandleFromDB(store);
 
     const startIn = this.options.startIn || 'documents';
     if (!handle) {
@@ -160,18 +159,18 @@ export class FSAAdaptor extends BaseAdaptor {
         mode: 'readwrite',
         startIn,
       });
-      await this.#saveHandleToDB(store, handle);
+      await this._saveHandleToDB(store, handle);
     } else {
       try {
-        await this.#verifyHandle(handle);
+        await this._verifyHandle(handle);
       } catch (err) {
-        await this.#dropHandleFromDB(store);
+        await this._dropHandleFromDB(store);
         handle = await window.showDirectoryPicker({
           id: this.ref,
           mode: 'readwrite',
           startIn,
         });
-        await this.#saveHandleToDB(store, handle);
+        await this._saveHandleToDB(store, handle);
       }
     }
 
@@ -182,10 +181,10 @@ export class FSAAdaptor extends BaseAdaptor {
 
   async destroy(): Promise<void> {
     this.root = null;
-    this.#purgeCache();
+    this._purgeCache();
   }
 
-  async #getParentHandle(path: string, create?: boolean): Promise<FileSystemDirectoryHandle> {
+  async _getParentHandle(path: string, create?: boolean): Promise<FileSystemDirectoryHandle> {
     if (!this.isInitialized) throw new Error('Adaptor not initialized');
     if (path === '') return this.root!;
     if (this.pathCache[path]) return this.pathCache[path] as FileSystemDirectoryHandle;
@@ -198,11 +197,11 @@ export class FSAAdaptor extends BaseAdaptor {
     return handle;
   }
 
-  async #getPathHandle(path: string, create?: boolean): Promise<FileSystemHandle> {
+  async _getPathHandle(path: string, create?: boolean): Promise<FileSystemHandle> {
     if (!this.isInitialized) throw new Error('Adaptor not initialized');
     if (path === '') return this.root!;
     if (this.pathCache[path]) return this.pathCache[path];
-    const parent = await this.#getParentHandle(path, create);
+    const parent = await this._getParentHandle(path, create);
     const subject = path.split('/').pop()!;
 
     for await (const [key, value] of parent.entries()) {
@@ -223,7 +222,7 @@ export class FSAAdaptor extends BaseAdaptor {
     throw new Error('Path not found');
   }
 
-  async #getHandleStat(path: string, handle: FileSystemHandle): Promise<FileStat> {
+  async _getHandleStat(path: string, handle: FileSystemHandle): Promise<FileStat> {
     if (handle.kind === 'directory') {
       return {
         path,
@@ -233,7 +232,7 @@ export class FSAAdaptor extends BaseAdaptor {
         size: 0,
       };
     } else if (handle.kind === 'file') {
-      let file = await this.#getFile(handle as FileSystemFileHandle);
+      let file = await this._getFile(handle as FileSystemFileHandle);
       return {
         path,
         parentPath: path.split('/').slice(0, -1).join('/'),
@@ -250,8 +249,8 @@ export class FSAAdaptor extends BaseAdaptor {
 
   async stat (path: string): Promise<FileStat | null> {
     try {
-      const handle = await this.#getPathHandle(path);
-      return this.#getHandleStat(path, handle);
+      const handle = await this._getPathHandle(path);
+      return this._getHandleStat(path, handle);
     } catch (err) {
       if (
         (err as Error).name === 'NotFoundError'
@@ -262,31 +261,31 @@ export class FSAAdaptor extends BaseAdaptor {
   }
 
   async readFile(path: string): Promise<Buffer> {
-    const handle = await this.#getPathHandle(path);
+    const handle = await this._getPathHandle(path);
     if (handle.kind !== 'file') throw new Error('Not a file');
-    const file = await this.#getFile(handle as FileSystemFileHandle);
+    const file = await this._getFile(handle as FileSystemFileHandle);
     const buffer = await file.arrayBuffer();
     return Buffer.from(buffer);
   }
 
   async writeFile(path: string, data: Buffer): Promise<void> {
-    const parent = await this.#getParentHandle(path);
+    const parent = await this._getParentHandle(path);
     const fileName = path.split('/').pop()!;
     const file = await parent.getFileHandle(fileName, { create: true });
     const writable = await file.createWritable();
     await writable.write(data as ArrayBuffer);
     await writable.close();
-    this.#purgeCache(file);
+    this._purgeCache(file);
   }
 
   async deleteFile(path: string): Promise<void> {
-    const parent = await this.#getParentHandle(path);
+    const parent = await this._getParentHandle(path);
     const fileName = path.split('/').pop()!;
 
     try {
       const handle = await parent.getFileHandle(fileName);
-      this.#purgeCache(handle);
-      this.#purgeCache(path);
+      this._purgeCache(handle);
+      this._purgeCache(path);
     } catch (err) {
       // ignore
     }
@@ -295,29 +294,29 @@ export class FSAAdaptor extends BaseAdaptor {
   }
 
   async list(path: string): Promise<PathMap> {
-    const handle = await this.#getPathHandle(path) as FileSystemDirectoryHandle;
+    const handle = await this._getPathHandle(path) as FileSystemDirectoryHandle;
     if (handle.kind !== 'directory') throw new Error('Not a directory');
 
     const map: PathMap = {};
     for await (const [key, value] of handle.entries()) {
       const fullPath = [path, key].join('/');
-      map[fullPath] = await this.#getHandleStat(fullPath, value) ;
+      map[fullPath] = await this._getHandleStat(fullPath, value) ;
     }
 
     return map;
   }
 
   async mkdir(path: string): Promise<void> {
-    const parent = await this.#getParentHandle(path);
+    const parent = await this._getParentHandle(path);
     const dirName = path.split('/').pop()!;
     await parent.getDirectoryHandle(dirName, { create: true });
   }
 
   async rmdir(path: string): Promise<void> {
-    const parent = await this.#getParentHandle(path);
+    const parent = await this._getParentHandle(path);
     const dirName = path.split('/').pop()!;
     await parent.removeEntry(dirName, { recursive: true });
-    await this.#purgeCache();
+    await this._purgeCache();
   }
 
   async _copyFile(
@@ -325,14 +324,14 @@ export class FSAAdaptor extends BaseAdaptor {
     targetPath: string,
     newFileName?: string,
   ): Promise<void> {
-    const source = await this.#getPathHandle(path) as FileSystemFileHandle;
-    const destination = await this.#getPathHandle(targetPath, true) as FileSystemDirectoryHandle;
-    const file = await this.#getFile(source);
+    const source = await this._getPathHandle(path) as FileSystemFileHandle;
+    const destination = await this._getPathHandle(targetPath, true) as FileSystemDirectoryHandle;
+    const file = await this._getFile(source);
     const newFile = await destination.getFileHandle(newFileName || source.name, { create: true });
     const writer = await newFile.createWritable();
     await writer.write(file);
     await writer.close();
-    this.#purgeCache(newFile);
+    this._purgeCache(newFile);
   }
 
   async _copyDirectory(
@@ -340,8 +339,8 @@ export class FSAAdaptor extends BaseAdaptor {
     targetPath: string,
     recursive?: boolean,
   ): Promise<void> {
-    const source = await this.#getPathHandle(path) as FileSystemDirectoryHandle;
-    await this.#getPathHandle(targetPath, true);
+    const source = await this._getPathHandle(path) as FileSystemDirectoryHandle;
+    await this._getPathHandle(targetPath, true);
     for await (const [key, value] of source.entries()) {
       const fullPath = [path, key].join('/');
       const fullTargetPath = [targetPath, key].join('/');
@@ -354,12 +353,12 @@ export class FSAAdaptor extends BaseAdaptor {
   }
 
   async isDirectory(path: string): Promise<boolean> {
-    const handle = await this.#getPathHandle(path);
+    const handle = await this._getPathHandle(path);
     return handle.kind === 'directory';
   }
 
   async isFile(path: string): Promise<boolean> {
-    const handle = await this.#getPathHandle(path);
+    const handle = await this._getPathHandle(path);
     return handle.kind === 'file';
   }
 }

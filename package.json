@@ -1,5 +1,5 @@
 {
-  "name": "files-multitool",
+  "name": "@duinoapp/files-multitool",
   "version": "0.0.1",
   "description": "Files Multitool",
   "main": "dist/index.js",
@@ -18,7 +18,8 @@
     "build:stats": "(echo '\\033[35;3m' ; cd dist && ls -lh index*js index*gz | tail -n +2 | awk '{print $5,$9}')",
     "bundle": "rollup --config rollup.config.js",
     "bundle:esm:min": "terser --ecma 6 --compress --mangle --module -o dist/index.min.mjs -- dist/index.mjs && gzip -9 -c dist/index.min.mjs > dist/index.min.mjs.gz",
-    "bundle:umd:min": "terser --ecma 6 --compress --mangle -o dist/index.umd.min.js -- dist/index.umd.js && gzip -9 -c dist/index.umd.min.js > dist/index.umd.min.js.gz"
+    "bundle:umd:min": "terser --ecma 6 --compress --mangle -o dist/index.umd.min.js -- dist/index.umd.js && gzip -9 -c dist/index.umd.min.js > dist/index.umd.min.js.gz",
+    "prepack": "yarn build"
   },
   "author": "Fraser Bullock",
   "license": "MIT",

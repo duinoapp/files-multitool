@@ -1,8 +1,9 @@
 import { BaseAdaptor, BaseAdaptorOptions } from '../../base';
 import { FileStat, PathMap } from '../../definitions';
 
-const INDEXDB_VERSION = 0;
-const INDEXDB_DEFAULT_DB = 'files-multitool';
+const INDEXDB_VERSION = 1;
+// const INDEXDB_DEFAULT_DB = 'files-multitool';
+const INDEXDB_DEFAULT_STORE = 'files';
 
 export interface IndexDBAdaptorOptions extends BaseAdaptorOptions {
   db?: string;
@@ -14,9 +15,9 @@ interface IndexDBFileStat extends FileStat {
 }
 
 export class IndexDBAdaptor extends BaseAdaptor {
-  declare protected options: IndexDBAdaptorOptions;
-  protected db = null as IDBDatabase | null;
-  protected indexedDB = null as IDBFactory | null;
+  declare options: IndexDBAdaptorOptions;
+  db = null as IDBDatabase | null;
+  indexedDB = null as IDBFactory | null;
 
   get isInitialized(): boolean {
     return !!this.db;
@@ -29,7 +30,7 @@ export class IndexDBAdaptor extends BaseAdaptor {
   async init(): Promise<void> {
     this.indexedDB = window.indexedDB;
     this.db = await new Promise((resolve, reject) => {
-      const request = this.indexedDB!.open(this.options.db || INDEXDB_DEFAULT_DB, INDEXDB_VERSION);
+      const request = this.indexedDB!.open(this.ref, INDEXDB_VERSION);
       request.onerror = (event) => {
         reject(event);
       };
@@ -38,7 +39,7 @@ export class IndexDBAdaptor extends BaseAdaptor {
       };
       request.onupgradeneeded = (event) => {
         const db = (event.target as any).result as IDBDatabase;
-        const store = db.createObjectStore(this.ref, { keyPath: 'path' });
+        const store = db.createObjectStore(INDEXDB_DEFAULT_STORE, { keyPath: 'path' });
         
         store.createIndex('path', 'path', { unique: true });
         store.createIndex('isDirectory', 'isDirectory', { unique: false });
@@ -49,7 +50,7 @@ export class IndexDBAdaptor extends BaseAdaptor {
         store.createIndex('parentPath', 'parentPath', { unique: false });
         store.createIndex('deletedAt', 'deletedAt', { unique: false });
 
-        resolve(db);
+        // resolve(db);
       };
     }) as IDBDatabase;
 
@@ -71,24 +72,24 @@ export class IndexDBAdaptor extends BaseAdaptor {
 
   // internal helper methods
 
-  #convertFileStat(stat: IndexDBFileStat): FileStat {
+  _convertFileStat(stat: IndexDBFileStat): FileStat {
     const clonedStat = { ...stat };
     delete clonedStat.content;
     delete clonedStat.deletedAt;
     return clonedStat;
   }
 
-  #getStore(): IDBObjectStore {
+  _getStore(): IDBObjectStore {
     if (!this.isInitialized) {
       throw new Error('Adaptor is not initialized.');
     }
     return this.db!
-      .transaction(this.ref, 'readwrite')
-      .objectStore(this.ref);
+      .transaction(INDEXDB_DEFAULT_STORE, 'readwrite')
+      .objectStore(INDEXDB_DEFAULT_STORE);
   }
 
-  #getItem(path: string): Promise<IndexDBFileStat | null> {
-    const store = this.#getStore();
+  _getItem(path: string): Promise<IndexDBFileStat | null> {
+    const store = this._getStore();
     const request = store.get(path);
     return new Promise((resolve, reject) => {
       request.onerror = (event) => {
@@ -100,8 +101,8 @@ export class IndexDBAdaptor extends BaseAdaptor {
     });
   }
 
-  #removeItem(path: string): Promise<void> {
-    const store = this.#getStore();
+  _removeItem(path: string): Promise<void> {
+    const store = this._getStore();
     const request = store.delete(path);
     return new Promise((resolve, reject) => {
       request.onerror = (event) => {
@@ -113,18 +114,18 @@ export class IndexDBAdaptor extends BaseAdaptor {
     });
   }
 
-  async #putItem(stat: IndexDBFileStat): Promise<IndexDBFileStat> {
+  async _putItem(stat: IndexDBFileStat): Promise<IndexDBFileStat> {
     let writeStat = stat;
-    const existing = await this.#getItem(stat.path);
+    const existing = await this._getItem(stat.path);
     if (existing && existing.deletedAt) {
-      await this.#removeItem(stat.path);
+      await this._removeItem(stat.path);
     } else if (existing) {
       writeStat = {
         ...stat,
         createdTime: existing.createdTime,
       };
     }
-    const store = this.#getStore();
+    const store = this._getStore();
     const request = store.put(writeStat);
     return new Promise((resolve, reject) => {
       request.onerror = (event) => {
@@ -136,8 +137,8 @@ export class IndexDBAdaptor extends BaseAdaptor {
     });
   }
 
-  #listItems(path: string): Promise<IndexDBFileStat[]> {
-    const store = this.#getStore();
+  _listItems(path: string): Promise<IndexDBFileStat[]> {
+    const store = this._getStore();
     const index = store.index('parentPath');
     const request = index.getAll(path);
     return new Promise((resolve, reject) => {
@@ -153,13 +154,13 @@ export class IndexDBAdaptor extends BaseAdaptor {
   // adaptor methods
 
   async stat(path: string): Promise<FileStat | null> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) return null;
-    return this.#convertFileStat(stat);
+    return this._convertFileStat(stat);
   }
 
   async readFile(path: string): Promise<Buffer> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) {
       throw new Error('File not found.');
     }
@@ -170,7 +171,7 @@ export class IndexDBAdaptor extends BaseAdaptor {
   }
 
   async writeFile(path: string, content: Buffer): Promise<void> {
-    await this.#putItem({
+    await this._putItem({
       path,
       parentPath: path.split('/').slice(0, -1).join('/')
         .replace(/(^\/)|(\/$)/g, ''),
@@ -184,33 +185,34 @@ export class IndexDBAdaptor extends BaseAdaptor {
   }
 
   async deleteFile(path: string): Promise<void> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) {
       throw new Error('File not found.');
     }
-    await this.#putItem({
+    await this._putItem({
       ...stat,
       deletedAt: new Date(),
     });
   }
 
   async list(path: string): Promise<PathMap> {
-    const items = await this.#listItems(path);
+    const items = await this._listItems(path);
     const result: PathMap = {};
     for (const item of items) {
       if (item.deletedAt) continue;
-      result[item.path] = this.#convertFileStat(item);
+      result[item.path] = this._convertFileStat(item);
     }
     return result;
   }
 
   async mkdir(path: string): Promise<void> {
-    const parts = path.split('/');
-    for (let i = 1; i < parts.length; i++) {
+    const parts = path.replace(/(^\/)|(\/$)/g, '').split('/');
+    for (let i = 0; i < parts.length; i++) {
       const partPath = parts.slice(0, i + 1).join('/');
-      const stat = await this.#getItem(partPath);
+      const stat = await this._getItem(partPath);
+      console.log('mkdir', path, stat);
       if (!stat || stat.deletedAt) {
-        await this.#putItem({
+        await this._putItem({
           path: partPath,
           parentPath: partPath.split('/').slice(0, -1).join('/')
             .replace(/(^\/)|(\/$)/g, ''),
@@ -225,11 +227,11 @@ export class IndexDBAdaptor extends BaseAdaptor {
   }
 
   async rmdir(path: string): Promise<void> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) {
       throw new Error('Directory not found.');
     }
-    const items = await this.#listItems(path);
+    const items = await this._listItems(path);
     for (const item of items) {
       if (item.deletedAt) continue;
       const itemPath = `${path}/${item.path.split('/').pop()}`;
@@ -239,19 +241,19 @@ export class IndexDBAdaptor extends BaseAdaptor {
         await this.deleteFile(itemPath);
       }
     }
-    await this.#putItem({
+    await this._putItem({
       ...stat,
       deletedAt: new Date(),
     });
   }
 
   async _copyFile(path: string, targetPath: string, newFileName?: string): Promise<void> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) {
       throw new Error('File not found.');
     }
     const fileName = newFileName || stat.path.split('/').pop()!;
-    await this.#putItem({
+    await this._putItem({
       ...stat,
       path: [targetPath, fileName].join('/'),
       parentPath: targetPath,
@@ -259,11 +261,11 @@ export class IndexDBAdaptor extends BaseAdaptor {
   }
 
   async _copyDirectory(path: string, newPath: string, recursive?: boolean): Promise<void> {
-    const stat = await this.#getItem(path);
+    const stat = await this._getItem(path);
     if (!stat || stat.deletedAt) {
       throw new Error('Directory not found.');
     }
-    const items = await this.#listItems(path);
+    const items = await this._listItems(path);
     await this.mkdir(newPath);
     for (const item of items) {
       if (item.deletedAt) continue;
