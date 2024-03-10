@@ -24,11 +24,12 @@ export class MemoryAdaptor extends BaseAdaptor {
   }
 
   async init(): Promise<void> {
-    this.isInitialized = true;
+    return super.init();
   }
 
   async destroy(): Promise<void> {
-    this.isInitialized = false;
+    this.files = {};
+    return super.destroy();
   }
 
   _toStat(file: MemoryFile): FileStat {

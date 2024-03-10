@@ -7,9 +7,9 @@
 import { BaseAdaptor, BaseAdaptorOptions } from '../../base';
 import { FileStat, PathMap } from '../../definitions';
 
-const INDEXDB_VERSION = 0;
-const INDEXDB_DEFAULT_DB = 'files-multitool';
-const INDEXDB_DEFAULT_STORE = '~~fsa-api~~';
+const INDEXEDDB_VERSION = 0;
+const INDEXEDDB_DEFAULT_DB = 'files-multitool';
+const INDEXEDDB_DEFAULT_STORE = '~~fsa-api~~';
 
 export interface FSAAdaptorOptions extends BaseAdaptorOptions {
   db?: string;
@@ -129,7 +129,7 @@ export class FSAAdaptor extends BaseAdaptor {
 
   async init(): Promise<void> {
     const db = await new Promise((resolve, reject) => {
-      const request = window.indexedDB.open(this.options.db || INDEXDB_DEFAULT_DB, INDEXDB_VERSION);
+      const request = window.indexedDB.open(this.options.db || INDEXEDDB_DEFAULT_DB, INDEXEDDB_VERSION);
       request.onerror = (event) => {
         reject(event);
       };
@@ -138,7 +138,7 @@ export class FSAAdaptor extends BaseAdaptor {
       };
       request.onupgradeneeded = (event) => {
         const db = (event.target as any).result as IDBDatabase;
-        const store = db.createObjectStore(this.options.store || INDEXDB_DEFAULT_STORE, { keyPath: 'path' });
+        const store = db.createObjectStore(this.options.store || INDEXEDDB_DEFAULT_STORE, { keyPath: 'path' });
         
         store.createIndex('ref', 'ref', { unique: true });
 
@@ -147,8 +147,8 @@ export class FSAAdaptor extends BaseAdaptor {
     }) as IDBDatabase;
 
     const store = db
-      .transaction(this.options.store || INDEXDB_DEFAULT_STORE, 'readwrite')
-      .objectStore(this.options.store || INDEXDB_DEFAULT_STORE);
+      .transaction(this.options.store || INDEXEDDB_DEFAULT_STORE, 'readwrite')
+      .objectStore(this.options.store || INDEXEDDB_DEFAULT_STORE);
 
     let handle = await this._getHandleFromDB(store);
 
@@ -177,11 +177,13 @@ export class FSAAdaptor extends BaseAdaptor {
     this.root = handle;
 
     db.close();
+    return super.init();
   }
 
   async destroy(): Promise<void> {
     this.root = null;
     this._purgeCache();
+    return super.destroy();
   }
 
   async _getParentHandle(path: string, create?: boolean): Promise<FileSystemDirectoryHandle> {

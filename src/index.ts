@@ -3,14 +3,14 @@ import { FileStat, PathMap, PathDump } from './definitions';
 import { BaseAdaptor, BaseAdaptorOptions } from './base';
 
 import { FSAAdaptor, FSAAdaptorOptions } from './adaptors/fsa-api';
-import { IndexDBAdaptor, IndexDBAdaptorOptions } from './adaptors/indexdb';
+import { IndexedDBAdaptor, IndexedDBAdaptorOptions } from './adaptors/indexed-db';
 import { MemoryAdaptor, MemoryAdaptorOptions } from './adaptors/memory';
 
 export { FileStat, PathMap, PathDump };
 
 export enum FilesMultitoolType {
   FSA_API = 'fsa-api',
-  INDEXDB = 'indexdb',
+  INDEXEDDB = 'indexed-db',
   MEMORY = 'memory',
 }
 
@@ -36,7 +36,7 @@ export interface FilesMultitoolPrettyTypes {
  * @property {FileStat} [oldStat] - The old stats of the file or directory if it was renamed.
  * @property {'added' | 'deleted' | 'modified' | 'renamed'} action - The action that occurred.
  */
-interface FilesMultitoolChangeEvent {
+export interface FilesMultitoolChangeEvent {
   path: string;
   stat: FileStat;
   oldPath?: string;
@@ -59,7 +59,7 @@ interface FilesMultitoolEvents {
   'paths-changed': (paths: string[], changes: FilesMultitoolChangeEvent[]) => void;
 }
 
-export interface FilesMultitoolOptions extends BaseAdaptorOptions, FSAAdaptorOptions, IndexDBAdaptorOptions, MemoryAdaptorOptions {
+export interface FilesMultitoolOptions extends BaseAdaptorOptions, FSAAdaptorOptions, IndexedDBAdaptorOptions, MemoryAdaptorOptions {
 }
 
 
@@ -95,8 +95,8 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
       case FilesMultitoolType.FSA_API:
         this.adaptor = new FSAAdaptor(ref, options as FSAAdaptorOptions);
         break;
-      case FilesMultitoolType.INDEXDB:
-        this.adaptor = new IndexDBAdaptor(ref, options as IndexDBAdaptorOptions);
+      case FilesMultitoolType.INDEXEDDB:
+        this.adaptor = new IndexedDBAdaptor(ref, options as IndexedDBAdaptorOptions);
         break;
       case FilesMultitoolType.MEMORY:
         this.adaptor = new MemoryAdaptor(ref, options as MemoryAdaptorOptions);
@@ -147,8 +147,8 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     switch (type) {
       case FilesMultitoolType.FSA_API:
         return FSAAdaptor.isSupported();
-      case FilesMultitoolType.INDEXDB:
-        return IndexDBAdaptor.isSupported();
+      case FilesMultitoolType.INDEXEDDB:
+        return IndexedDBAdaptor.isSupported();
       case FilesMultitoolType.MEMORY:
         return MemoryAdaptor.isSupported();
       default:
@@ -173,7 +173,7 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
       {
         technology: 'IndexedDB',
         text: 'Local Browser Storage',
-        value: FilesMultitoolType.INDEXDB,
+        value: FilesMultitoolType.INDEXEDDB,
       },
       ...(includeMemory ? [{
         technology: 'Memory',
@@ -234,6 +234,7 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     const map = {} as PathMap;
     const root = await this.adaptor.list(path);
     for (const [key, value] of Object.entries(root)) {
+      if (key === path) continue;
       map[key] = value;
       if (value.isDirectory && recursive) {
         const children = await this.list(value.path, recursive);
@@ -279,7 +280,6 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     if (stat?.isDirectory) throw new Error('Cannot write to a directory.');
     const parentPath = path.split('/').slice(0, -1).join('/').replace(/(^\/)|(\/$)/g, '');
     if (parentPath) await this.adaptor.mkdir(parentPath);
-    console.log('writing file', path, parentPath, stat, await this.adaptor.stat(parentPath));
     if (typeof content === 'string') {
       content = Buffer.from(content, encoding);
     }
@@ -485,9 +485,10 @@ export default class FilesMultitool extends TypedEmitter<FilesMultitoolEvents>{
     if (sourceStat.isDirectory) sourceChildren = await this.list(source, true);
     await this.adaptor.move(source, destination);
     destinationStat = await this.adaptor.stat(destination);
+    if (!destinationStat) throw new Error('Something went wrong. New destination was not found.');
     let destinationChildren: PathMap = {};
     if (sourceStat.isDirectory) destinationChildren = await this.list(destination, true);
-    this._massEmit('renamed', destination, destinationStat!, destinationChildren, source, sourceStat, sourceChildren);
+    this._massEmit('renamed', destination, destinationStat, destinationChildren, source, sourceStat, sourceChildren);
   }
 
   /**

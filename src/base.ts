@@ -21,9 +21,6 @@ export abstract class BaseAdaptor {
   get isInitialized(): boolean {
     return this._isInitialized;
   }
-  set isInitialized(value: boolean) {
-    this._isInitialized = value;
-  }
 
   /**
    * Check if the adaptor is supported in the current environment.
@@ -71,7 +68,7 @@ export abstract class BaseAdaptor {
    * @returns {Promise<void>}
   */
   async init(): Promise<void> {
-    this.isInitialized = true;
+    this._isInitialized = true;
   }
 
   /**
@@ -81,7 +78,7 @@ export abstract class BaseAdaptor {
    * It wont delete the files, just the connection to the file system/database.
   */
   async destroy(): Promise<void> {
-    this.isInitialized = false;
+    this._isInitialized = false;
   }
 
   /**
