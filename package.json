@@ -1,6 +1,6 @@
 {
   "name": "@duinoapp/files-multitool",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Files Multitool",
   "main": "dist/index.js",
   "module": "dist/index.min.mjs",
@@ -46,11 +46,11 @@
     "rollup": "^3.2.3",
     "rollup-plugin-node-polyfills": "^0.2.1",
     "terser": "^5.15.1",
-    "tiny-typed-emitter": "^2.1.0",
     "ts-node": "^10.8.0",
     "typescript": "^4.6.4"
   },
   "dependencies": {
-    "node-fetch": "^3.3.1"
+    "node-fetch": "^3.3.1",
+    "tiny-typed-emitter": "^2.1.0"
   }
 }
