@@ -7,9 +7,9 @@
 import { BaseAdaptor, BaseAdaptorOptions } from '../../base';
 import { FileStat, PathMap } from '../../definitions';
 
-const INDEXEDDB_VERSION = 0;
+const INDEXEDDB_VERSION = 1;
 const INDEXEDDB_DEFAULT_DB = 'files-multitool';
-const INDEXEDDB_DEFAULT_STORE = '~~fsa-api~~';
+const INDEXEDDB_DEFAULT_STORE = 'files-fsa-api';
 
 export interface FSAAdaptorOptions extends BaseAdaptorOptions {
   db?: string;
@@ -138,19 +138,17 @@ export class FSAAdaptor extends BaseAdaptor {
       };
       request.onupgradeneeded = (event) => {
         const db = (event.target as any).result as IDBDatabase;
-        const store = db.createObjectStore(this.options.store || INDEXEDDB_DEFAULT_STORE, { keyPath: 'path' });
-        
+        const store = db.createObjectStore(this.options.store || INDEXEDDB_DEFAULT_STORE, { keyPath: 'ref' });
         store.createIndex('ref', 'ref', { unique: true });
-
-        resolve(db);
+        store.createIndex('handle', 'handle', { unique: false });
       };
     }) as IDBDatabase;
 
-    const store = db
+    const getStore = () => db
       .transaction(this.options.store || INDEXEDDB_DEFAULT_STORE, 'readwrite')
       .objectStore(this.options.store || INDEXEDDB_DEFAULT_STORE);
 
-    let handle = await this._getHandleFromDB(store);
+    let handle = await this._getHandleFromDB(getStore());
 
     const startIn = this.options.startIn || 'documents';
     if (!handle) {
@@ -159,18 +157,18 @@ export class FSAAdaptor extends BaseAdaptor {
         mode: 'readwrite',
         startIn,
       });
-      await this._saveHandleToDB(store, handle);
+      await this._saveHandleToDB(getStore(), handle);
     } else {
       try {
         await this._verifyHandle(handle);
       } catch (err) {
-        await this._dropHandleFromDB(store);
+        await this._dropHandleFromDB(getStore());
         handle = await window.showDirectoryPicker({
           id: this.ref,
           mode: 'readwrite',
           startIn,
         });
-        await this._saveHandleToDB(store, handle);
+        await this._saveHandleToDB(getStore(), handle);
       }
     }
 
@@ -189,13 +187,15 @@ export class FSAAdaptor extends BaseAdaptor {
   async _getParentHandle(path: string, create?: boolean): Promise<FileSystemDirectoryHandle> {
     if (!this.isInitialized) throw new Error('Adaptor not initialized');
     if (path === '') return this.root!;
-    if (this.pathCache[path]) return this.pathCache[path] as FileSystemDirectoryHandle;
     const parts = path.split('/');
+    parts.pop();
+    const parentPath = parts.join('/');
+    if (this.pathCache[parentPath]) return this.pathCache[parentPath] as FileSystemDirectoryHandle;
     let handle = this.root!;
-    for (let i = 0; i < parts.length - 1; i++) {
+    for (let i = 0; i < parts.length; i++) {
       handle = await handle.getDirectoryHandle(parts[i], { create });
     }
-    this.pathCache[path] = handle;
+    this.pathCache[parentPath] = handle;
     return handle;
   }
 
@@ -278,6 +278,7 @@ export class FSAAdaptor extends BaseAdaptor {
     await writable.write(data as ArrayBuffer);
     await writable.close();
     this._purgeCache(file);
+    this._purgeCache(path);
   }
 
   async deleteFile(path: string): Promise<void> {
@@ -301,7 +302,7 @@ export class FSAAdaptor extends BaseAdaptor {
 
     const map: PathMap = {};
     for await (const [key, value] of handle.entries()) {
-      const fullPath = [path, key].join('/');
+      const fullPath = path !== '' ? [path, key].join('/') : key;
       map[fullPath] = await this._getHandleStat(fullPath, value) ;
     }
 
@@ -309,8 +310,10 @@ export class FSAAdaptor extends BaseAdaptor {
   }
 
   async mkdir(path: string): Promise<void> {
-    const parent = await this._getParentHandle(path);
+    if (path === '') return;
     const dirName = path.split('/').pop()!;
+    if (dirName === '') return;
+    const parent = await this._getParentHandle(path);
     await parent.getDirectoryHandle(dirName, { create: true });
   }
 
