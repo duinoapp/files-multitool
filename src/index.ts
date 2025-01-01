@@ -47,7 +47,7 @@ export interface FilesMultitoolChangeEvent {
 /**
  * An object representing the events that can be emitted by the FilesMultitool class.
  */
-interface FilesMultitoolEvents {
+export interface FilesMultitoolEvents {
   'file-added': (path: string) => void;
   'file-deleted': (path: string) => void;
   'file-changed': (path: string, change: FilesMultitoolChangeEvent) => void;

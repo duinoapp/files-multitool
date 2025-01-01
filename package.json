@@ -1,6 +1,6 @@
 {
   "name": "@duinoapp/files-multitool",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "Files Multitool",
   "main": "dist/index.js",
   "module": "dist/index.min.mjs",
